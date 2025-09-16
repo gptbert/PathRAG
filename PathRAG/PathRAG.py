@@ -40,27 +40,7 @@ from .storage import (
 )
 
 
-def lazy_external_import(module_name: str, class_name: str):
-    """Lazily import a class from an external module based on the package of the caller."""
-
-    import inspect
-
-    caller_frame = inspect.currentframe().f_back
-    module = inspect.getmodule(caller_frame)
-    package = module.__package__ if module else None
-
-    def import_class(*args, **kwargs):
-        import importlib
-
-        module = importlib.import_module(module_name, package=package)
-
-        cls = getattr(module, class_name)
-        return cls(*args, **kwargs)
-
-    return import_class
-
-
-def always_get_an_event_loop() -> asyncio.AbstractEventLoop:
+def always_get_an_event_loop():
     """
     Ensure that there is always an event loop available.
 
@@ -173,9 +153,14 @@ class PathRAG:
             if self.enable_llm_cache
             else None
         )
-        self.embedding_func = limit_async_func_call(self.embedding_func_max_async)(
-            self.embedding_func
-        )
+        if isinstance(self.embedding_func, EmbeddingFunc):
+            self.embedding_func.func = limit_async_func_call(
+                self.embedding_func_max_async
+            )(self.embedding_func.func)
+        else:
+            self.embedding_func = limit_async_func_call(self.embedding_func_max_async)(
+                self.embedding_func
+            )
 
         self.full_docs = self.key_string_value_json_storage_cls(
             namespace="full_docs",
