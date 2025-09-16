@@ -6,15 +6,15 @@ aiohttp
 graspologic
 hnswlib
 nano-vectordb
-neo4j
+# neo4j
 networkx
-ollama
+# ollama
 openai
-oracledb
-psycopg[binary,pool]
-pymilvus
-pymongo
-pymysql
+# oracledb
+# psycopg[binary,pool]
+# pymilvus
+# pymongo
+# pymysql
 pyvis
 # lmdeploy[all]
 sqlalchemy
