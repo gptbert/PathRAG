@@ -1,0 +1,24 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+.env
+.env.*
+
+# Logs and cache artifacts
+PathRAG.log
+*.log
+PathRAG_cache_*/
+.cache/
+
+# OS files
+.DS_Store
+
+# Misc
+*.pyc
+
+data/
