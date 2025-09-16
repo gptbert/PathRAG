@@ -16,14 +16,14 @@ pip install -e .
 
 ## Prepare Your Environment
 1. Create or choose a working directory where PathRAG can store intermediate assets.
-2. Provide an OpenAI-compatible API endpoint and key if you plan to use the default GPT-based LLM helper.
+2. Provide a SiliconFlow (OpenAI-compatible) API endpoint and key if you plan to use the default LLM helper.
 
 You can set the required environment variables directly in Python before instantiating `PathRAG`:
 ```python
 import os
 
 os.environ["OPENAI_API_KEY"] = "your_api_key"
-os.environ["OPENAI_API_BASE"] = "https://api.openai.com/v1"
+os.environ["OPENAI_BASE_URL"] = "https://api.siliconflow.cn/v1"
 ```
 
 ## Quick Start
@@ -31,7 +31,7 @@ The `v1_test.py` script demonstrates the main workflow. The essential steps are 
 ```python
 import os
 from PathRAG import PathRAG, QueryParam
-from PathRAG.llm import gpt_4o_mini_complete
+from PathRAG.llm import siliconflow_complete
 
 WORKING_DIR = "./your_working_dir"
 
@@ -40,7 +40,7 @@ if not os.path.exists(WORKING_DIR):
 
 rag = PathRAG(
     working_dir=WORKING_DIR,
-    llm_model_func=gpt_4o_mini_complete,
+    llm_model_func=siliconflow_complete,
 )
 
 data_file = "./text.txt"
@@ -55,7 +55,7 @@ print(answer)
 ### Notes
 - Replace `data_file` with the document you want to index prior to querying.
 - `QueryParam(mode="hybrid")` combines semantic and graph retrieval; explore other modes in `operate.py`.
-- Swap `gpt_4o_mini_complete` for any callable that matches the expected LLM interface.
+- Swap `siliconflow_complete` for any callable that matches the expected LLM interface.
 
 ## Configuration
 Most tuning knobs live in `base.py` and `operate.py`. Key areas include:
