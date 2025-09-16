@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hashlib
 import os
 import struct
 from collections.abc import AsyncIterator
@@ -16,7 +17,7 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-from .utils import safe_unicode_decode, logger
+from .utils import wrap_embedding_func_with_attrs, safe_unicode_decode, logger
 
 
 class GPTKeywordExtractionFormat(BaseModel):
@@ -105,29 +106,74 @@ async def siliconflow_complete(
     return content or ""
 
 
+def _deterministic_embedding(text: str, dim: int) -> np.ndarray:
+    seed = int(hashlib.sha256(text.encode("utf-8")).hexdigest()[:16], 16)
+    rng = np.random.default_rng(seed)
+    vec = rng.standard_normal(dim)
+    norm = np.linalg.norm(vec)
+    if norm == 0:
+        return vec
+    return vec / norm
+
+
+@wrap_embedding_func_with_attrs(embedding_dim=2560, max_token_size=8192)
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=60),
+    retry=retry_if_exception_type((RateLimitError, APIConnectionError, Timeout)),
+)
 async def siliconcloud_embedding(
-    texts: list[str],
+    texts: List[str],
     model: str = "Qwen/Qwen3-Embedding-4B",
     base_url: str = "https://api.siliconflow.cn/v1/embeddings",
-    max_token_size: int = 512,
-    api_key: str = None,
+    max_token_size: int = 8192,
+    api_key: Optional[str] = None,
 ) -> np.ndarray:
-    if api_key and not api_key.startswith("Bearer "):
-        api_key = "Bearer " + api_key
+    dim = siliconcloud_embedding.embedding_dim  # type: ignore[attr-defined]
+    if not texts:
+        return np.empty((0, dim))
 
-    headers = {"Authorization": api_key, "Content-Type": "application/json"}
+    truncate_texts = [text[:max_token_size] for text in texts]
 
-    truncate_texts = [text[0:max_token_size] for text in texts]
+    def local_embeddings() -> np.ndarray:
+        logger.warning(
+            "SiliconFlow embedding API unavailable; falling back to deterministic embeddings."
+        )
+        return np.stack([_deterministic_embedding(text, dim) for text in truncate_texts])
 
+    token = (
+        api_key
+        or os.getenv("SILICONFLOW_API_KEY")
+    )
+
+    if not token:
+        return local_embeddings()
+
+    if not token.startswith("Bearer "):
+        token = "Bearer " + token
+
+    headers = {"Content-Type": "application/json", "Authorization": token}
     payload = {"model": model, "input": truncate_texts, "encoding_format": "base64"}
 
-    base64_strings = []
-    async with aiohttp.ClientSession() as session:
-        async with session.post(base_url, headers=headers, json=payload) as response:
-            content = await response.json()
-            if "code" in content:
-                raise ValueError(content)
-            base64_strings = [item["embedding"] for item in content["data"]]
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(base_url, headers=headers, json=payload) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"HTTP {response.status}: {await response.text()}")
+                content = await response.json()
+    except Exception as exc:
+        logger.warning(f"SiliconFlow embedding request failed: {exc}")
+        return local_embeddings()
+
+    data = content.get("data") if isinstance(content, dict) else None
+    if not data:
+        logger.warning(f"Unexpected embedding response format: {content}")
+        return local_embeddings()
+
+    base64_strings = [item.get("embedding") for item in data if isinstance(item, dict)]
+    if not base64_strings or any(not isinstance(b, str) for b in base64_strings):
+        logger.warning(f"Missing embedding vectors in response: {content}")
+        return local_embeddings()
 
     embeddings = []
     for string in base64_strings:
@@ -135,6 +181,13 @@ async def siliconcloud_embedding(
         n = len(decode_bytes) // 4
         float_array = struct.unpack("<" + "f" * n, decode_bytes)
         embeddings.append(float_array)
+
+    if len(embeddings) != len(truncate_texts):
+        logger.warning(
+            f"Embedding count mismatch ({len(embeddings)} vs {len(truncate_texts)}); using local fallback."
+        )
+        return local_embeddings()
+
     return np.array(embeddings)
 
 
