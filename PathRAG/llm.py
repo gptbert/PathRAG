@@ -2,12 +2,13 @@ import asyncio
 import base64
 import os
 import struct
-from typing import Any, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
 import numpy as np
 from openai import AsyncOpenAI, APIConnectionError, RateLimitError, Timeout
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from .utils import wrap_embedding_func_with_attrs, safe_unicode_decode, logger
@@ -55,12 +56,13 @@ async def siliconflow_complete(
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
     **kwargs: Any,
-) -> str:
+) -> Union[str, AsyncIterator[str]]:
     """Call the SiliconFlow chat completion endpoint using its OpenAI-compatible API."""
 
     history_messages = history_messages or []
     kwargs.pop("hashing_kv", None)
     kwargs.pop("mode", None)
+    kwargs.pop("keyword_extraction", None)
     if keyword_extraction:
         kwargs["response_format"] = GPTKeywordExtractionFormat
 
@@ -72,6 +74,19 @@ async def siliconflow_complete(
         messages=messages,
         **kwargs,
     )
+
+    if hasattr(response, "__aiter__"):
+
+        async def inner():
+            async for chunk in response:
+                content = chunk.choices[0].delta.content
+                if not content:
+                    continue
+                if r"\u" in content:
+                    content = safe_unicode_decode(content.encode("utf-8"))
+                yield content
+
+        return inner()
 
     content = response.choices[0].message.content
     if content and r"\u" in content:
@@ -97,10 +112,13 @@ async def siliconcloud_embedding(
 ) -> np.ndarray:
     """Create embeddings via SiliconFlow's embedding API."""
 
-    if api_key and not api_key.startswith("Bearer "):
-        api_key = "Bearer " + api_key
+    token = api_key or os.getenv("SILICONFLOW_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if token and not token.startswith("Bearer "):
+        token = "Bearer " + token
 
-    headers = {"Authorization": api_key or os.getenv("SILICONFLOW_TOKEN", ""), "Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = token
     truncate_texts = [text[:max_token_size] for text in texts]
     payload = {"model": model, "input": truncate_texts, "encoding_format": "base64"}
 
