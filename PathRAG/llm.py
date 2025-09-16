@@ -9,7 +9,12 @@ import aiohttp
 import numpy as np
 from openai import AsyncOpenAI, APIConnectionError, RateLimitError, Timeout
 from pydantic import BaseModel
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 from .utils import wrap_embedding_func_with_attrs, safe_unicode_decode, logger
 
@@ -35,9 +40,7 @@ def _build_messages(
 def _get_async_client(base_url: Optional[str], api_key: Optional[str]) -> AsyncOpenAI:
     client_kwargs: Dict[str, Any] = {}
     env_base_url = (
-        base_url
-        or os.getenv("OPENAI_BASE_URL")
-        or os.getenv("OPENAI_API_BASE")
+        base_url or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")
     )
     if env_base_url:
         client_kwargs["base_url"] = env_base_url
@@ -149,6 +152,7 @@ async def siliconcloud_embedding(
 
 
 if __name__ == "__main__":
+
     async def main():
         result = await siliconflow_complete("How are you?")
         print(result)

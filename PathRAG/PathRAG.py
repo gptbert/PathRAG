@@ -60,18 +60,6 @@ def lazy_external_import(module_name: str, class_name: str):
     return import_class
 
 
-# Neo4JStorage = lazy_external_import(".kg.neo4j_impl", "Neo4JStorage")
-# OracleKVStorage = lazy_external_import(".kg.oracle_impl", "OracleKVStorage")
-# OracleGraphStorage = lazy_external_import(".kg.oracle_impl", "OracleGraphStorage")
-# OracleVectorDBStorage = lazy_external_import(".kg.oracle_impl", "OracleVectorDBStorage")
-# MilvusVectorDBStorge = lazy_external_import(".kg.milvus_impl", "MilvusVectorDBStorge")
-# MongoKVStorage = lazy_external_import(".kg.mongo_impl", "MongoKVStorage")
-# ChromaVectorDBStorage = lazy_external_import(".kg.chroma_impl", "ChromaVectorDBStorage")
-# TiDBKVStorage = lazy_external_import(".kg.tidb_impl", "TiDBKVStorage")
-# TiDBVectorDBStorage = lazy_external_import(".kg.tidb_impl", "TiDBVectorDBStorage")
-# AGEStorage = lazy_external_import(".kg.age_impl", "AGEStorage")
-
-
 def always_get_an_event_loop() -> asyncio.AbstractEventLoop:
     """
     Ensure that there is always an event loop available.
@@ -136,7 +124,9 @@ class PathRAG:
         }
     )
 
-    embedding_func: EmbeddingFunc = field(default_factory=lambda: siliconcloud_embedding)
+    embedding_func: EmbeddingFunc = field(
+        default_factory=lambda: siliconcloud_embedding
+    )
     embedding_batch_num: int = 32
     embedding_func_max_async: int = 16
 
@@ -239,18 +229,8 @@ class PathRAG:
     def _get_storage_class(self) -> Type[BaseGraphStorage]:
         return {
             "JsonKVStorage": JsonKVStorage,
-            # "OracleKVStorage": OracleKVStorage,
-            # "MongoKVStorage": MongoKVStorage,
-            # "TiDBKVStorage": TiDBKVStorage,
             "NanoVectorDBStorage": NanoVectorDBStorage,
-            # "OracleVectorDBStorage": OracleVectorDBStorage,
-            # "MilvusVectorDBStorge": MilvusVectorDBStorge,
-            # "ChromaVectorDBStorage": ChromaVectorDBStorage,
-            # "TiDBVectorDBStorage": TiDBVectorDBStorage,
             "NetworkXStorage": NetworkXStorage,
-            # "Neo4JStorage": Neo4JStorage,
-            # "OracleGraphStorage": OracleGraphStorage,
-            # "AGEStorage": AGEStorage,
         }
 
     def insert(self, string_or_strings):
