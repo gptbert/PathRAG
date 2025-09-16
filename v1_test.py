@@ -3,7 +3,7 @@ import os
 from PathRAG import PathRAG, QueryParam
 from PathRAG.llm import siliconflow_complete
 
-WORKING_DIR = ""
+WORKING_DIR = "kg"
 
 api_key = ""
 os.environ["SILICONFLOW_API_KEY"] = api_key
