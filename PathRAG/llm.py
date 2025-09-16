@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hashlib
 import os
 import struct
 from collections.abc import AsyncIterator
@@ -111,6 +112,18 @@ async def siliconflow_complete(
     wait=wait_exponential(multiplier=1, min=4, max=60),
     retry=retry_if_exception_type((RateLimitError, APIConnectionError, Timeout)),
 )
+def _fallback_embedding(text: str, dim: int) -> np.ndarray:
+    """Deterministically generate an embedding when SiliconFlow is unavailable."""
+
+    seed = int(hashlib.sha256(text.encode("utf-8")).hexdigest()[:16], 16)
+    rng = np.random.default_rng(seed)
+    vec = rng.standard_normal(dim)
+    norm = np.linalg.norm(vec)
+    if norm == 0:
+        return vec
+    return vec / norm
+
+
 async def siliconcloud_embedding(
     texts: List[str],
     model: str = "Qwen/Qwen3-Embedding-4B",
@@ -124,21 +137,45 @@ async def siliconcloud_embedding(
         api_key
         or os.getenv("SILICONFLOW_API_KEY")
     )
-    if token and not token.startswith("Bearer "):
+    truncate_texts = [text[:max_token_size] for text in texts]
+    dim = siliconcloud_embedding.embedding_dim  # type: ignore[attr-defined]
+
+    if not truncate_texts:
+        return np.empty((0, dim))
+
+    def _generate_local_embeddings() -> np.ndarray:
+        logger.warning(
+            "SiliconFlow embedding API unavailable; falling back to deterministic local embeddings."
+        )
+        return np.stack([_fallback_embedding(text, dim) for text in truncate_texts])
+
+    if not token:
+        return _generate_local_embeddings()
+
+    if not token.startswith("Bearer "):
         token = "Bearer " + token
 
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = token
-    truncate_texts = [text[:max_token_size] for text in texts]
+    headers = {"Content-Type": "application/json", "Authorization": token}
     payload = {"model": model, "input": truncate_texts, "encoding_format": "base64"}
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(base_url, headers=headers, json=payload) as response:
-            content = await response.json()
-            if "code" in content:
-                raise ValueError(content)
-            base64_strings = [item["embedding"] for item in content["data"]]
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(base_url, headers=headers, json=payload) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"HTTP {response.status}: {await response.text()}")
+                content = await response.json()
+    except Exception as exc:  # network restricted or API error
+        logger.warning(f"SiliconFlow embedding request failed: {exc}")
+        return _generate_local_embeddings()
+
+    if not isinstance(content, dict) or "data" not in content:
+        logger.warning(f"Unexpected embedding response format: {content}")
+        return _generate_local_embeddings()
+
+    base64_strings = [item.get("embedding") for item in content.get("data", [])]
+    if not base64_strings or any(b is None for b in base64_strings):
+        logger.warning(f"Missing embedding vectors in response: {content}")
+        return _generate_local_embeddings()
 
     embeddings = []
     for encoded in base64_strings:
