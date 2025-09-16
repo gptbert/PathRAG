@@ -40,12 +40,12 @@ def _build_messages(
 def _get_async_client(base_url: Optional[str], api_key: Optional[str]) -> AsyncOpenAI:
     client_kwargs: Dict[str, Any] = {}
     env_base_url = (
-        base_url or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")
+        base_url or os.getenv("SILICONFLOW_BASE_URL")
     )
     if env_base_url:
         client_kwargs["base_url"] = env_base_url
-    if api_key or os.getenv("OPENAI_API_KEY"):
-        client_kwargs["api_key"] = api_key or os.getenv("OPENAI_API_KEY")
+    if api_key or os.getenv("SILICONFLOW_API_KEY"):
+        client_kwargs["api_key"] = api_key or os.getenv("SILICONFLOW_API_KEY")
     return AsyncOpenAI(**client_kwargs)
 
 
@@ -123,8 +123,6 @@ async def siliconcloud_embedding(
     token = (
         api_key
         or os.getenv("SILICONFLOW_API_KEY")
-        or os.getenv("SILICONFLOW_TOKEN")
-        or os.getenv("OPENAI_API_KEY")
     )
     if token and not token.startswith("Bearer "):
         token = "Bearer " + token

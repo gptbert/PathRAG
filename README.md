@@ -22,8 +22,8 @@ You can set the required environment variables directly in Python before instant
 ```python
 import os
 
-os.environ["OPENAI_API_KEY"] = "your_api_key"
-os.environ["OPENAI_BASE_URL"] = "https://api.siliconflow.cn/v1"
+os.environ["SILICONFLOW_API_KEY"] = "your_api_key"
+os.environ["SILICONFLOW_BASE_URL"] = "https://api.siliconflow.cn/v1"
 ```
 
 ## Quick Start
