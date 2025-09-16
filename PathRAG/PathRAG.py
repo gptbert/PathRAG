@@ -111,7 +111,7 @@ class PathRAG:
     embedding_func_max_async: int = 16
 
     llm_model_func: callable = siliconflow_complete
-    llm_model_name: str = "deepseek-ai/DeepSeek-V2.5"
+    llm_model_name: str = "deepseek-ai/DeepSeek-V3"
     llm_model_max_token_size: int = 32768
     llm_model_max_async: int = 16
     llm_model_kwargs: dict = field(default_factory=dict)

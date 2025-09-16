@@ -73,7 +73,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
         )
         self._max_batch_size = self.global_config["embedding_batch_num"]
         self._client = NanoVectorDB(
-            self.embedding_func.embedding_dim, storage_file=self._client_file_name
+            embedding_dim = 2560, storage_file=self._client_file_name
         )
         self.cosine_better_than_threshold = self.global_config.get(
             "cosine_better_than_threshold", self.cosine_better_than_threshold
