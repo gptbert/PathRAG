@@ -1,13 +1,13 @@
 import os
 from PathRAG import PathRAG, QueryParam
-from PathRAG.llm import gpt_4o_mini_complete
+from PathRAG.llm import siliconflow_complete
 
 WORKING_DIR = ""
 
 api_key = ""
 os.environ["OPENAI_API_KEY"] = api_key
-base_url = "https://api.openai.com/v1"
-os.environ["OPENAI_API_BASE"] = base_url
+base_url = "https://api.siliconflow.cn/v1"
+os.environ["OPENAI_BASE_URL"] = base_url
 
 
 if not os.path.exists(WORKING_DIR):
@@ -15,7 +15,7 @@ if not os.path.exists(WORKING_DIR):
 
 rag = PathRAG(
     working_dir=WORKING_DIR,
-    llm_model_func=gpt_4o_mini_complete,
+    llm_model_func=siliconflow_complete,
 )
 
 data_file = ""
