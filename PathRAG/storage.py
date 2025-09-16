@@ -181,6 +181,7 @@ class NetworkXStorage(BaseGraphStorage):
         if os.path.exists(file_name):
             return nx.read_graphml(file_name)
         return None
+
     # def load_nx_graph(file_name) -> nx.Graph:
     #     if os.path.exists(file_name):
     #         return nx.read_graphml(file_name)
@@ -282,17 +283,19 @@ class NetworkXStorage(BaseGraphStorage):
         if self._graph.has_node(source_node_id):
             return list(self._graph.edges(source_node_id))
         return None
+
     async def get_node_in_edges(self, source_node_id: str):
         if self._graph.has_node(source_node_id):
             return list(self._graph.in_edges(source_node_id))
         return None
+
     async def get_node_out_edges(self, source_node_id: str):
         if self._graph.has_node(source_node_id):
             return list(self._graph.out_edges(source_node_id))
         return None
-    
-    async def get_pagerank(self,source_node_id:str):
-        pagerank_list=nx.pagerank(self._graph)
+
+    async def get_pagerank(self, source_node_id: str):
+        pagerank_list = nx.pagerank(self._graph)
         if source_node_id in pagerank_list:
             return pagerank_list[source_node_id]
         else:
@@ -334,8 +337,9 @@ class NetworkXStorage(BaseGraphStorage):
 
         nodes_ids = [self._graph.nodes[node_id]["id"] for node_id in nodes]
         return embeddings, nodes_ids
-    
+
     async def edges(self):
         return self._graph.edges()
+
     async def nodes(self):
         return self._graph.nodes()

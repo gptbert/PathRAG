@@ -20,7 +20,7 @@ class QueryParam:
     only_need_prompt: bool = False
     response_type: str = "Multiple Paragraphs"
     stream: bool = False
-    top_k: int =40
+    top_k: int = 40
     max_token_for_text_unit: int = 4000
     max_token_for_global_context: int = 3000
     max_token_for_local_context: int = 5000
@@ -32,11 +32,11 @@ class StorageNameSpace:
     global_config: dict
 
     async def index_done_callback(self):
-       
+
         pass
 
     async def query_done_callback(self):
-        
+
         pass
 
 
@@ -69,7 +69,7 @@ class BaseKVStorage(Generic[T], StorageNameSpace):
         raise NotImplementedError
 
     async def filter_keys(self, data: list[str]) -> set[str]:
-        
+
         raise NotImplementedError
 
     async def upsert(self, data: dict[str, T]):
@@ -94,8 +94,8 @@ class BaseGraphStorage(StorageNameSpace):
 
     async def edge_degree(self, src_id: str, tgt_id: str) -> int:
         raise NotImplementedError
-    
-    async def get_pagerank(self,node_id:str) -> float:
+
+    async def get_pagerank(self, node_id: str) -> float:
         raise NotImplementedError
 
     async def get_node(self, node_id: str) -> Union[dict, None]:
@@ -110,14 +110,15 @@ class BaseGraphStorage(StorageNameSpace):
         self, source_node_id: str
     ) -> Union[list[tuple[str, str]], None]:
         raise NotImplementedError
-    
+
     async def get_node_in_edges(
-        self,source_node_id:str
-    ) -> Union[list[tuple[str,str]],None]:
+        self, source_node_id: str
+    ) -> Union[list[tuple[str, str]], None]:
         raise NotImplementedError
+
     async def get_node_out_edges(
-        self,source_node_id:str
-    ) -> Union[list[tuple[str,str]],None]:
+        self, source_node_id: str
+    ) -> Union[list[tuple[str, str]], None]:
         raise NotImplementedError
 
     async def upsert_node(self, node_id: str, node_data: dict[str, str]):

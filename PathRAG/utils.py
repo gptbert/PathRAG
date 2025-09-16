@@ -20,7 +20,6 @@ from PathRAG.prompt import PROMPTS
 
 class UnlimitedSemaphore:
 
-
     async def __aenter__(self):
         pass
 
@@ -80,7 +79,6 @@ def locate_json_string_body_from_string(content: str) -> Union[str, None]:
     except Exception:
         pass
 
-
         return None
 
 
@@ -105,7 +103,6 @@ def compute_mdhash_id(content, prefix: str = ""):
 
 def limit_async_func_call(max_size: int, waitting_time: float = 0.0001):
 
-
     def final_decro(func):
 
         __current_size = 0
@@ -126,7 +123,6 @@ def limit_async_func_call(max_size: int, waitting_time: float = 0.0001):
 
 
 def wrap_embedding_func_with_attrs(**kwargs):
-
 
     def final_decro(func) -> EmbeddingFunc:
         new_func = EmbeddingFunc(**kwargs, func=func)
@@ -178,9 +174,7 @@ def split_string_by_multi_markers(content: str, markers: list[str]) -> list[str]
     return [r.strip() for r in results if r.strip()]
 
 
-
 def clean_str(input: Any) -> str:
-
 
     if not isinstance(input, str):
         return input
@@ -238,15 +232,21 @@ def xml_to_json(xml_file):
         for node in root.findall(".//node", namespace):
             node_data = {
                 "id": node.get("id").strip('"'),
-                "entity_type": node.find("./data[@key='d0']", namespace).text.strip('"')
-                if node.find("./data[@key='d0']", namespace) is not None
-                else "",
-                "description": node.find("./data[@key='d1']", namespace).text
-                if node.find("./data[@key='d1']", namespace) is not None
-                else "",
-                "source_id": node.find("./data[@key='d2']", namespace).text
-                if node.find("./data[@key='d2']", namespace) is not None
-                else "",
+                "entity_type": (
+                    node.find("./data[@key='d0']", namespace).text.strip('"')
+                    if node.find("./data[@key='d0']", namespace) is not None
+                    else ""
+                ),
+                "description": (
+                    node.find("./data[@key='d1']", namespace).text
+                    if node.find("./data[@key='d1']", namespace) is not None
+                    else ""
+                ),
+                "source_id": (
+                    node.find("./data[@key='d2']", namespace).text
+                    if node.find("./data[@key='d2']", namespace) is not None
+                    else ""
+                ),
             }
             data["nodes"].append(node_data)
 
@@ -254,18 +254,26 @@ def xml_to_json(xml_file):
             edge_data = {
                 "source": edge.get("source").strip('"'),
                 "target": edge.get("target").strip('"'),
-                "weight": float(edge.find("./data[@key='d3']", namespace).text)
-                if edge.find("./data[@key='d3']", namespace) is not None
-                else 0.0,
-                "description": edge.find("./data[@key='d4']", namespace).text
-                if edge.find("./data[@key='d4']", namespace) is not None
-                else "",
-                "keywords": edge.find("./data[@key='d5']", namespace).text
-                if edge.find("./data[@key='d5']", namespace) is not None
-                else "",
-                "source_id": edge.find("./data[@key='d6']", namespace).text
-                if edge.find("./data[@key='d6']", namespace) is not None
-                else "",
+                "weight": (
+                    float(edge.find("./data[@key='d3']", namespace).text)
+                    if edge.find("./data[@key='d3']", namespace) is not None
+                    else 0.0
+                ),
+                "description": (
+                    edge.find("./data[@key='d4']", namespace).text
+                    if edge.find("./data[@key='d4']", namespace) is not None
+                    else ""
+                ),
+                "keywords": (
+                    edge.find("./data[@key='d5']", namespace).text
+                    if edge.find("./data[@key='d5']", namespace) is not None
+                    else ""
+                ),
+                "source_id": (
+                    edge.find("./data[@key='d6']", namespace).text
+                    if edge.find("./data[@key='d6']", namespace) is not None
+                    else ""
+                ),
             }
             data["edges"].append(edge_data)
 
@@ -336,11 +344,9 @@ async def get_best_cached_response(
     best_prompt = None
     best_cache_id = None
 
-
     for cache_id, cache_data in mode_cache.items():
         if cache_data["embedding"] is None:
             continue
-
 
         cached_quantized = np.frombuffer(
             bytes.fromhex(cache_data["embedding"]), dtype=np.uint8
@@ -370,25 +376,28 @@ async def get_best_cached_response(
                 llm_result = llm_result.strip()
                 llm_similarity = float(llm_result)
 
-
                 best_similarity = llm_similarity
                 if best_similarity < similarity_threshold:
                     log_data = {
                         "event": "llm_check_cache_rejected",
-                        "original_question": original_prompt[:100] + "..."
-                        if len(original_prompt) > 100
-                        else original_prompt,
-                        "cached_question": best_prompt[:100] + "..."
-                        if len(best_prompt) > 100
-                        else best_prompt,
+                        "original_question": (
+                            original_prompt[:100] + "..."
+                            if len(original_prompt) > 100
+                            else original_prompt
+                        ),
+                        "cached_question": (
+                            best_prompt[:100] + "..."
+                            if len(best_prompt) > 100
+                            else best_prompt
+                        ),
                         "similarity_score": round(best_similarity, 4),
                         "threshold": similarity_threshold,
                     }
                     logger.info(json.dumps(log_data, ensure_ascii=False))
                     return None
-            except Exception as e:   
+            except Exception as e:
                 logger.warning(f"LLM similarity check failed: {e}")
-                return None  
+                return None
 
         prompt_display = (
             best_prompt[:50] + "..." if len(best_prompt) > 50 else best_prompt
@@ -415,10 +424,8 @@ def cosine_similarity(v1, v2):
 
 def quantize_embedding(embedding: np.ndarray, bits=8) -> tuple:
 
-
     min_val = embedding.min()
     max_val = embedding.max()
-
 
     scale = (2**bits - 1) / (max_val - min_val)
     quantized = np.round((embedding - min_val) * scale).astype(np.uint8)
@@ -439,13 +446,11 @@ async def handle_cache(hashing_kv, args_hash, prompt, mode="default"):
     if hashing_kv is None:
         return None, None, None, None
 
-
     if mode == "naive":
         mode_cache = await hashing_kv.get_by_id(mode) or {}
         if args_hash in mode_cache:
             return mode_cache[args_hash]["return"], None, None, None
         return None, None, None, None
-
 
     embedding_cache_config = hashing_kv.global_config.get(
         "embedding_cache_config",
@@ -501,12 +506,14 @@ async def save_to_cache(hashing_kv, cache_data: CacheData):
 
     mode_cache[cache_data.args_hash] = {
         "return": cache_data.content,
-        "embedding": cache_data.quantized.tobytes().hex()
-        if cache_data.quantized is not None
-        else None,
-        "embedding_shape": cache_data.quantized.shape
-        if cache_data.quantized is not None
-        else None,
+        "embedding": (
+            cache_data.quantized.tobytes().hex()
+            if cache_data.quantized is not None
+            else None
+        ),
+        "embedding_shape": (
+            cache_data.quantized.shape if cache_data.quantized is not None else None
+        ),
         "embedding_min": cache_data.min_val,
         "embedding_max": cache_data.max_val,
         "original_prompt": cache_data.prompt,
@@ -517,6 +524,7 @@ async def save_to_cache(hashing_kv, cache_data: CacheData):
 
 def safe_unicode_decode(content):
     unicode_escape_pattern = re.compile(r"\\u([0-9a-fA-F]{4})")
+
     def replace_unicode_escape(match):
         return chr(int(match.group(1), 16))
 

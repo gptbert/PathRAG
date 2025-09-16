@@ -70,7 +70,7 @@ async def _handle_entity_relation_summary(
     )
 
     tokens = encode_string_by_tiktoken(description, model_name=tiktoken_model_name)
-    if len(tokens) < summary_max_tokens: 
+    if len(tokens) < summary_max_tokens:
         return description
     prompt_template = PROMPTS["summarize_entity_descriptions"]
     use_description = decode_tokens_by_tiktoken(
@@ -93,7 +93,7 @@ async def _handle_single_entity_extraction(
 ):
     if len(record_attributes) < 4 or record_attributes[0] != '"entity"':
         return None
-   
+
     entity_name = clean_str(record_attributes[1].upper())
     if not entity_name.strip():
         return None
@@ -114,7 +114,7 @@ async def _handle_single_relationship_extraction(
 ):
     if len(record_attributes) < 5 or record_attributes[0] != '"relationship"':
         return None
-   
+
     source = clean_str(record_attributes[1].upper())
     target = clean_str(record_attributes[2].upper())
     edge_description = clean_str(record_attributes[3])
@@ -260,7 +260,7 @@ async def extract_entities(
     entity_extract_max_gleaning = global_config["entity_extract_max_gleaning"]
 
     ordered_chunks = list(chunks.items())
-  
+
     language = global_config["addon_params"].get(
         "language", PROMPTS["DEFAULT_LANGUAGE"]
     )
@@ -282,7 +282,7 @@ async def extract_entities(
         entity_types=",".join(entity_types),
         language=language,
     )
-  
+
     examples = examples.format(**example_context_base)
 
     entity_extract_prompt = PROMPTS["entity_extraction"]
@@ -456,7 +456,6 @@ async def extract_entities(
     return knowledge_graph_inst
 
 
-
 async def kg_query(
     query,
     knowledge_graph_inst: BaseGraphStorage,
@@ -491,7 +490,6 @@ async def kg_query(
         logger.error(f"Unknown mode {query_param.mode} in kg_query")
         return PROMPTS["fail_response"]
 
-
     kw_prompt_temp = PROMPTS["keywords_extraction"]
     kw_prompt = kw_prompt_temp.format(query=query, examples=examples, language=language)
     result = await use_model_func(kw_prompt, keyword_extraction=True)
@@ -510,11 +508,9 @@ async def kg_query(
             logger.error("No JSON-like structure found in the result.")
             return PROMPTS["fail_response"]
 
-
     except json.JSONDecodeError as e:
         print(f"JSON parsing error: {e} {result}")
         return PROMPTS["fail_response"]
-
 
     if hl_keywords == [] and ll_keywords == []:
         logger.warning("low_level_keywords and high_level_keywords is empty")
@@ -530,9 +526,8 @@ async def kg_query(
     else:
         hl_keywords = ", ".join(hl_keywords)
 
-
     keywords = [ll_keywords, hl_keywords]
-    context= await _build_query_context(
+    context = await _build_query_context(
         keywords,
         knowledge_graph_inst,
         entities_vdb,
@@ -540,8 +535,6 @@ async def kg_query(
         text_chunks_db,
         query_param,
     )
-
-    
 
     if query_param.only_need_context:
         return context
@@ -568,7 +561,6 @@ async def kg_query(
             .replace("</system>", "")
             .strip()
         )
-
 
     await save_to_cache(
         hashing_kv,
@@ -657,7 +649,6 @@ async def _build_query_context(
             [hl_text_units_context, ll_text_units_context],
         )
 
-
     return f"""
 -----global-information-----
 -----high-level entity information-----
@@ -683,6 +674,7 @@ async def _build_query_context(
 ```
 """
 
+
 async def _get_node_data(
     query,
     knowledge_graph_inst: BaseGraphStorage,
@@ -701,7 +693,6 @@ async def _get_node_data(
     if not all([n is not None for n in node_datas]):
         logger.warning("Some nodes are missing, maybe the storage is damaged")
 
-
     node_degrees = await asyncio.gather(
         *[knowledge_graph_inst.node_degree(r["entity_name"]) for r in results]
     )
@@ -709,20 +700,18 @@ async def _get_node_data(
         {**n, "entity_name": k["entity_name"], "rank": d}
         for k, n, d in zip(results, node_datas, node_degrees)
         if n is not None
-    ]  
+    ]
     use_text_units = await _find_most_related_text_unit_from_entities(
         node_datas, query_param, text_chunks_db, knowledge_graph_inst
     )
 
-
-    use_relations= await _find_most_related_edges_from_entities3(
+    use_relations = await _find_most_related_edges_from_entities3(
         node_datas, query_param, knowledge_graph_inst
     )
 
     logger.info(
         f"Local query uses {len(node_datas)} entites, {len(use_relations)} relations, {len(use_text_units)} text units"
     )
-
 
     entites_section_list = [["id", "entity", "type", "description", "rank"]]
     for i, n in enumerate(node_datas):
@@ -737,17 +726,17 @@ async def _get_node_data(
         )
     entities_context = list_of_list_to_csv(entites_section_list)
 
-    relations_section_list=[["id","context"]]
-    for i,e in enumerate(use_relations):
-        relations_section_list.append([i,e])
-    relations_context=list_of_list_to_csv(relations_section_list)
+    relations_section_list = [["id", "context"]]
+    for i, e in enumerate(use_relations):
+        relations_section_list.append([i, e])
+    relations_context = list_of_list_to_csv(relations_section_list)
 
     text_units_section_list = [["id", "content"]]
     for i, t in enumerate(use_text_units):
         text_units_section_list.append([i, t["content"]])
     text_units_context = list_of_list_to_csv(text_units_section_list)
-    
-    return entities_context,relations_context,text_units_context
+
+    return entities_context, relations_context, text_units_context
 
 
 async def _find_most_related_text_unit_from_entities(
@@ -774,11 +763,10 @@ async def _find_most_related_text_unit_from_entities(
         *[knowledge_graph_inst.get_node(e) for e in all_one_hop_nodes]
     )
 
-
     all_one_hop_text_units_lookup = {
         k: set(split_string_by_multi_markers(v["source_id"], [GRAPH_FIELD_SEP]))
         for k, v in zip(all_one_hop_nodes, all_one_hop_nodes_data)
-        if v is not None and "source_id" in v  
+        if v is not None and "source_id" in v
     }
 
     all_text_units_lookup = {}
@@ -798,7 +786,6 @@ async def _find_most_related_text_unit_from_entities(
                         and c_id in all_one_hop_text_units_lookup[e[1]]
                     ):
                         all_text_units_lookup[c_id]["relation_counts"] += 1
-
 
     all_text_units = [
         {"id": k, **v}
@@ -822,6 +809,7 @@ async def _find_most_related_text_unit_from_entities(
 
     all_text_units = [t["data"] for t in all_text_units]
     return all_text_units
+
 
 async def _get_edge_data(
     keywords,
@@ -972,7 +960,6 @@ async def _find_related_text_unit_from_relationships(
     all_text_units = [{"id": k, **v} for k, v in all_text_units_lookup.items()]
     all_text_units = sorted(all_text_units, key=lambda x: x["order"])
 
-
     valid_text_units = [
         t for t in all_text_units if t["data"] is not None and "content" in t["data"]
     ]
@@ -1011,19 +998,21 @@ def combine_contexts(entities, relationships, sources):
 
 import networkx as nx
 from collections import defaultdict
+
+
 async def find_paths_and_edges_with_stats(graph, target_nodes):
 
     result = defaultdict(lambda: {"paths": [], "edges": set()})
-    path_stats = {"1-hop": 0, "2-hop": 0, "3-hop": 0}   
+    path_stats = {"1-hop": 0, "2-hop": 0, "3-hop": 0}
     one_hop_paths = []
     two_hop_paths = []
     three_hop_paths = []
 
     async def dfs(current, target, path, depth):
 
-        if depth > 3: 
+        if depth > 3:
             return
-        if current == target: 
+        if current == target:
             result[(path[0], target)]["paths"].append(list(path))
             for u, v in zip(path[:-1], path[1:]):
                 result[(path[0], target)]["edges"].add(tuple(sorted((u, v))))
@@ -1037,9 +1026,9 @@ async def find_paths_and_edges_with_stats(graph, target_nodes):
                 path_stats["3-hop"] += 1
                 three_hop_paths.append(list(path))
             return
-        neighbors = graph.neighbors(current) 
+        neighbors = graph.neighbors(current)
         for neighbor in neighbors:
-            if neighbor not in path:  
+            if neighbor not in path:
                 await dfs(neighbor, target, path + [neighbor], depth + 1)
 
     for node1 in target_nodes:
@@ -1050,15 +1039,17 @@ async def find_paths_and_edges_with_stats(graph, target_nodes):
     for key in result:
         result[key]["edges"] = list(result[key]["edges"])
 
-    return dict(result), path_stats , one_hop_paths, two_hop_paths, three_hop_paths
+    return dict(result), path_stats, one_hop_paths, two_hop_paths, three_hop_paths
+
+
 def bfs_weighted_paths(G, path, source, target, threshold, alpha):
-    results = [] 
-    edge_weights = defaultdict(float)  
+    results = []
+    edge_weights = defaultdict(float)
     node = source
     follow_dict = {}
 
     for p in path:
-        for i in range(len(p) - 1):  
+        for i in range(len(p) - 1):
             current = p[i]
             next_num = p[i + 1]
 
@@ -1068,93 +1059,105 @@ def bfs_weighted_paths(G, path, source, target, threshold, alpha):
                 follow_dict[current] = {next_num}
 
     for neighbor in follow_dict[node]:
-        edge_weights[(node, neighbor)] += 1/len(follow_dict[node])
+        edge_weights[(node, neighbor)] += 1 / len(follow_dict[node])
 
         if neighbor == target:
             results.append(([node, neighbor]))
             continue
-        
+
         if edge_weights[(node, neighbor)] > threshold:
 
             for second_neighbor in follow_dict[neighbor]:
-                weight = edge_weights[(node, neighbor)] * alpha / len(follow_dict[neighbor])
+                weight = (
+                    edge_weights[(node, neighbor)] * alpha / len(follow_dict[neighbor])
+                )
                 edge_weights[(neighbor, second_neighbor)] += weight
 
                 if second_neighbor == target:
                     results.append(([node, neighbor, second_neighbor]))
                     continue
 
-                if edge_weights[(neighbor, second_neighbor)] > threshold:    
+                if edge_weights[(neighbor, second_neighbor)] > threshold:
 
                     for third_neighbor in follow_dict[second_neighbor]:
-                        weight = edge_weights[(neighbor, second_neighbor)] * alpha / len(follow_dict[second_neighbor]) 
+                        weight = (
+                            edge_weights[(neighbor, second_neighbor)]
+                            * alpha
+                            / len(follow_dict[second_neighbor])
+                        )
                         edge_weights[(second_neighbor, third_neighbor)] += weight
 
-                        if third_neighbor == target :
-                            results.append(([node, neighbor, second_neighbor, third_neighbor]))
+                        if third_neighbor == target:
+                            results.append(
+                                ([node, neighbor, second_neighbor, third_neighbor])
+                            )
                             continue
     path_weights = []
     for p in path:
         path_weight = 0
         for i in range(len(p) - 1):
             edge = (p[i], p[i + 1])
-            path_weight += edge_weights.get(edge, 0)  
-        path_weights.append(path_weight/(len(p)-1))
+            path_weight += edge_weights.get(edge, 0)
+        path_weights.append(path_weight / (len(p) - 1))
 
     combined = [(p, w) for p, w in zip(path, path_weights)]
 
     return combined
+
+
 async def _find_most_related_edges_from_entities3(
     node_datas: list[dict],
     query_param: QueryParam,
     knowledge_graph_inst: BaseGraphStorage,
-):  
+):
 
     G = nx.Graph()
     edges = await knowledge_graph_inst.edges()
     nodes = await knowledge_graph_inst.nodes()
 
     for u, v in edges:
-        G.add_edge(u, v) 
+        G.add_edge(u, v)
     G.add_nodes_from(nodes)
     source_nodes = [dp["entity_name"] for dp in node_datas]
-    result, path_stats, one_hop_paths, two_hop_paths, three_hop_paths = await find_paths_and_edges_with_stats(G, source_nodes)
-
+    result, path_stats, one_hop_paths, two_hop_paths, three_hop_paths = (
+        await find_paths_and_edges_with_stats(G, source_nodes)
+    )
 
     threshold = 0.3
-    alpha = 0.8 
+    alpha = 0.8
     all_results = []
-    
-    for node1 in source_nodes: 
-        for node2 in source_nodes: 
-            if node1 != node2: 
+
+    for node1 in source_nodes:
+        for node2 in source_nodes:
+            if node1 != node2:
                 if (node1, node2) in result:
                     sub_G = nx.Graph()
-                    paths = result[(node1,node2)]['paths']
-                    edges = result[(node1,node2)]['edges']
+                    paths = result[(node1, node2)]["paths"]
+                    edges = result[(node1, node2)]["edges"]
                     sub_G.add_edges_from(edges)
-                    results = bfs_weighted_paths(G, paths, node1, node2, threshold, alpha)
-                    all_results+= results
+                    results = bfs_weighted_paths(
+                        G, paths, node1, node2, threshold, alpha
+                    )
+                    all_results += results
     all_results = sorted(all_results, key=lambda x: x[1], reverse=True)
     seen = set()
     result_edge = []
     for edge, weight in all_results:
         sorted_edge = tuple(sorted(edge))
         if sorted_edge not in seen:
-            seen.add(sorted_edge)  
-            result_edge.append((edge, weight))  
+            seen.add(sorted_edge)
+            result_edge.append((edge, weight))
 
-    
-    length_1 = int(len(one_hop_paths)/2)
-    length_2 = int(len(two_hop_paths)/2) 
-    length_3 = int(len(three_hop_paths)/2) 
+    length_1 = int(len(one_hop_paths) / 2)
+    length_2 = int(len(two_hop_paths) / 2)
+    length_3 = int(len(three_hop_paths) / 2)
     results = []
-    if one_hop_paths!=[]:
+    if one_hop_paths != []:
         results = one_hop_paths[0:length_1]
-    if two_hop_paths!=[]:
+    if two_hop_paths != []:
         results = results + two_hop_paths[0:length_2]
-    if three_hop_paths!=[]:
-        results  =results + three_hop_paths[0:length_3]
+    if three_hop_paths != []:
+        results = results + three_hop_paths[0:length_3]
 
     length = len(results)
     total_edges = 15
@@ -1162,9 +1165,9 @@ async def _find_most_related_edges_from_entities3(
         total_edges = length
     sort_result = []
     if result_edge:
-        if len(result_edge)>total_edges:
+        if len(result_edge) > total_edges:
             sort_result = result_edge[0:total_edges]
-        else : 
+        else:
             sort_result = result_edge
     final_result = []
     for edge, weight in sort_result:
@@ -1174,65 +1177,198 @@ async def _find_most_related_edges_from_entities3(
 
     for path in final_result:
         if len(path) == 4:
-            s_name,b1_name,b2_name,t_name = path[0],path[1],path[2],path[3]
-            edge0 = await knowledge_graph_inst.get_edge(path[0], path[1]) or await knowledge_graph_inst.get_edge(path[1], path[0])
-            edge1 = await knowledge_graph_inst.get_edge(path[1],path[2]) or await knowledge_graph_inst.get_edge(path[2], path[1])
-            edge2 = await knowledge_graph_inst.get_edge(path[2],path[3]) or await knowledge_graph_inst.get_edge(path[3], path[2])
-            if edge0==None or edge1==None or edge2==None:
-                print(path,"边丢失")
-                if edge0==None:
+            s_name, b1_name, b2_name, t_name = path[0], path[1], path[2], path[3]
+            edge0 = await knowledge_graph_inst.get_edge(
+                path[0], path[1]
+            ) or await knowledge_graph_inst.get_edge(path[1], path[0])
+            edge1 = await knowledge_graph_inst.get_edge(
+                path[1], path[2]
+            ) or await knowledge_graph_inst.get_edge(path[2], path[1])
+            edge2 = await knowledge_graph_inst.get_edge(
+                path[2], path[3]
+            ) or await knowledge_graph_inst.get_edge(path[3], path[2])
+            if edge0 == None or edge1 == None or edge2 == None:
+                print(path, "边丢失")
+                if edge0 == None:
                     print("edge0丢失")
-                if edge1==None:
+                if edge1 == None:
                     print("edge1丢失")
-                if edge2==None:
+                if edge2 == None:
                     print("edge2丢失")
                 continue
-            e1 = "through edge ("+edge0["keywords"]+") to connect to "+s_name+" and "+b1_name+"."
-            e2 = "through edge ("+edge1["keywords"]+") to connect to "+b1_name+" and "+b2_name+"."
-            e3 = "through edge ("+edge2["keywords"]+") to connect to "+b2_name+" and "+t_name+"."
+            e1 = (
+                "through edge ("
+                + edge0["keywords"]
+                + ") to connect to "
+                + s_name
+                + " and "
+                + b1_name
+                + "."
+            )
+            e2 = (
+                "through edge ("
+                + edge1["keywords"]
+                + ") to connect to "
+                + b1_name
+                + " and "
+                + b2_name
+                + "."
+            )
+            e3 = (
+                "through edge ("
+                + edge2["keywords"]
+                + ") to connect to "
+                + b2_name
+                + " and "
+                + t_name
+                + "."
+            )
             s = await knowledge_graph_inst.get_node(s_name)
-            s = "The entity "+s_name+" is a "+s["entity_type"]+" with the description("+s["description"]+")"
+            s = (
+                "The entity "
+                + s_name
+                + " is a "
+                + s["entity_type"]
+                + " with the description("
+                + s["description"]
+                + ")"
+            )
             b1 = await knowledge_graph_inst.get_node(b1_name)
-            b1 = "The entity "+b1_name+" is a "+b1["entity_type"]+" with the description("+b1["description"]+")"
+            b1 = (
+                "The entity "
+                + b1_name
+                + " is a "
+                + b1["entity_type"]
+                + " with the description("
+                + b1["description"]
+                + ")"
+            )
             b2 = await knowledge_graph_inst.get_node(b2_name)
-            b2 = "The entity "+b2_name+" is a "+b2["entity_type"]+" with the description("+b2["description"]+")"
+            b2 = (
+                "The entity "
+                + b2_name
+                + " is a "
+                + b2["entity_type"]
+                + " with the description("
+                + b2["description"]
+                + ")"
+            )
             t = await knowledge_graph_inst.get_node(t_name)
-            t = "The entity "+t_name+" is a "+t["entity_type"]+" with the description("+t["description"]+")"
-            relationship.append([s+e1+b1+"and"+b1+e2+b2+"and"+b2+e3+t])
+            t = (
+                "The entity "
+                + t_name
+                + " is a "
+                + t["entity_type"]
+                + " with the description("
+                + t["description"]
+                + ")"
+            )
+            relationship.append(
+                [s + e1 + b1 + "and" + b1 + e2 + b2 + "and" + b2 + e3 + t]
+            )
         elif len(path) == 3:
-            s_name,b_name,t_name = path[0],path[1],path[2]
-            edge0 = await knowledge_graph_inst.get_edge(path[0], path[1]) or await knowledge_graph_inst.get_edge(path[1], path[0])
-            edge1 = await knowledge_graph_inst.get_edge(path[1],path[2]) or await knowledge_graph_inst.get_edge(path[2], path[1])
-            if edge0==None or edge1==None:
-                print(path,"边丢失")
+            s_name, b_name, t_name = path[0], path[1], path[2]
+            edge0 = await knowledge_graph_inst.get_edge(
+                path[0], path[1]
+            ) or await knowledge_graph_inst.get_edge(path[1], path[0])
+            edge1 = await knowledge_graph_inst.get_edge(
+                path[1], path[2]
+            ) or await knowledge_graph_inst.get_edge(path[2], path[1])
+            if edge0 == None or edge1 == None:
+                print(path, "边丢失")
                 continue
-            e1 = "through edge("+edge0["keywords"]+") to connect to "+s_name+" and "+b_name+"."
-            e2 = "through edge("+edge1["keywords"]+") to connect to "+b_name+" and "+t_name+"."
+            e1 = (
+                "through edge("
+                + edge0["keywords"]
+                + ") to connect to "
+                + s_name
+                + " and "
+                + b_name
+                + "."
+            )
+            e2 = (
+                "through edge("
+                + edge1["keywords"]
+                + ") to connect to "
+                + b_name
+                + " and "
+                + t_name
+                + "."
+            )
             s = await knowledge_graph_inst.get_node(s_name)
-            s = "The entity "+s_name+" is a "+s["entity_type"]+" with the description("+s["description"]+")"
+            s = (
+                "The entity "
+                + s_name
+                + " is a "
+                + s["entity_type"]
+                + " with the description("
+                + s["description"]
+                + ")"
+            )
             b = await knowledge_graph_inst.get_node(b_name)
-            b = "The entity "+b_name+" is a "+b["entity_type"]+" with the description("+b["description"]+")"
+            b = (
+                "The entity "
+                + b_name
+                + " is a "
+                + b["entity_type"]
+                + " with the description("
+                + b["description"]
+                + ")"
+            )
             t = await knowledge_graph_inst.get_node(t_name)
-            t = "The entity "+t_name+" is a "+t["entity_type"]+" with the description("+t["description"]+")"
-            relationship.append([s+e1+b+"and"+b+e2+t])
+            t = (
+                "The entity "
+                + t_name
+                + " is a "
+                + t["entity_type"]
+                + " with the description("
+                + t["description"]
+                + ")"
+            )
+            relationship.append([s + e1 + b + "and" + b + e2 + t])
         elif len(path) == 2:
-            s_name,t_name = path[0],path[1]
-            edge0 = await knowledge_graph_inst.get_edge(path[0], path[1]) or await knowledge_graph_inst.get_edge(path[1], path[0])
-            if edge0==None:
-                print(path,"边丢失")
+            s_name, t_name = path[0], path[1]
+            edge0 = await knowledge_graph_inst.get_edge(
+                path[0], path[1]
+            ) or await knowledge_graph_inst.get_edge(path[1], path[0])
+            if edge0 == None:
+                print(path, "边丢失")
                 continue
-            e = "through edge("+edge0["keywords"]+") to connect to "+s_name+" and "+t_name+"."
+            e = (
+                "through edge("
+                + edge0["keywords"]
+                + ") to connect to "
+                + s_name
+                + " and "
+                + t_name
+                + "."
+            )
             s = await knowledge_graph_inst.get_node(s_name)
-            s = "The entity "+s_name+" is a "+s["entity_type"]+" with the description("+s["description"]+")"
+            s = (
+                "The entity "
+                + s_name
+                + " is a "
+                + s["entity_type"]
+                + " with the description("
+                + s["description"]
+                + ")"
+            )
             t = await knowledge_graph_inst.get_node(t_name)
-            t = "The entity "+t_name+" is a "+t["entity_type"]+" with the description("+t["description"]+")"
-            relationship.append([s+e+t])
-
+            t = (
+                "The entity "
+                + t_name
+                + " is a "
+                + t["entity_type"]
+                + " with the description("
+                + t["description"]
+                + ")"
+            )
+            relationship.append([s + e + t])
 
     relationship = truncate_list_by_token_size(
-          relationship, 
-          key=lambda x: x[0],
-          max_token_size=query_param.max_token_for_local_context,
+        relationship,
+        key=lambda x: x[0],
+        max_token_size=query_param.max_token_for_local_context,
     )
 
     reversed_relationship = relationship[::-1]

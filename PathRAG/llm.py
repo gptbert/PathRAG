@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import copy
 import json
@@ -55,16 +56,12 @@ async def openai_complete_if_cache(
     prompt,
     system_prompt=None,
     history_messages=[],
-    base_url="https://api.openai.com/v1",
-    api_key="",
+    base_url=os.environ["OPENAI_BASE_URL"],
+    api_key=os.environ["OPENAI_API_KEY"],
     **kwargs,
 ) -> str:
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
     time.sleep(2)
-    openai_async_client = (
-        AsyncOpenAI() if base_url is None else AsyncOpenAI(base_url=base_url)
-    )
+    openai_async_client = AsyncOpenAI(base_url=base_url) if base_url else AsyncOpenAI()
     kwargs.pop("hashing_kv", None)
     kwargs.pop("keyword_extraction", None)
     messages = []
@@ -73,37 +70,38 @@ async def openai_complete_if_cache(
     messages.extend(history_messages)
     messages.append({"role": "user", "content": prompt})
 
-
     logger.debug("===== Query Input to LLM =====")
     logger.debug(f"Query: {prompt}")
     logger.debug(f"System prompt: {system_prompt}")
     logger.debug("Full context:")
-    if "response_format" in kwargs:
-        response = await openai_async_client.beta.chat.completions.parse(
-            model=model, messages=messages, **kwargs
-        )
-    else:
-        response = await openai_async_client.chat.completions.create(
-            model=model, messages=messages, **kwargs
-        )
+    SEM = asyncio.Semaphore(5)
+    async with SEM:
+        if "response_format" in kwargs:
+            response = await openai_async_client.beta.chat.completions.parse(
+                model=model, messages=messages, **kwargs
+            )
+        else:
+            response = await openai_async_client.chat.completions.create(
+                model=model, messages=messages, **kwargs
+            )
 
-    if hasattr(response, "__aiter__"):
+        if hasattr(response, "__aiter__"):
 
-        async def inner():
-            async for chunk in response:
-                content = chunk.choices[0].delta.content
-                if content is None:
-                    continue
-                if r"\u" in content:
-                    content = safe_unicode_decode(content.encode("utf-8"))
-                yield content
+            async def inner():
+                async for chunk in response:
+                    content = chunk.choices[0].delta.content
+                    if content is None:
+                        continue
+                    if r"\u" in content:
+                        content = safe_unicode_decode(content.encode("utf-8"))
+                    yield content
 
-        return inner()
-    else:
-        content = response.choices[0].message.content
-        if r"\u" in content:
-            content = safe_unicode_decode(content.encode("utf-8"))
-        return content
+            return inner()
+        else:
+            content = response.choices[0].message.content
+            if r"\u" in content:
+                content = safe_unicode_decode(content.encode("utf-8"))
+            return content
 
 
 @retry(
@@ -147,78 +145,6 @@ async def azure_openai_complete_if_cache(
     content = response.choices[0].message.content
 
     return content
-
-
-class BedrockError(Exception):
-    """Generic error for issues related to Amazon Bedrock"""
-
-
-@retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, max=60),
-    retry=retry_if_exception_type((BedrockError)),
-)
-async def bedrock_complete_if_cache(
-    model,
-    prompt,
-    system_prompt=None,
-    history_messages=[],
-    aws_access_key_id=None,
-    aws_secret_access_key=None,
-    aws_session_token=None,
-    **kwargs,
-) -> str:
-    os.environ["AWS_ACCESS_KEY_ID"] = os.environ.get(
-        "AWS_ACCESS_KEY_ID", aws_access_key_id
-    )
-    os.environ["AWS_SECRET_ACCESS_KEY"] = os.environ.get(
-        "AWS_SECRET_ACCESS_KEY", aws_secret_access_key
-    )
-    os.environ["AWS_SESSION_TOKEN"] = os.environ.get(
-        "AWS_SESSION_TOKEN", aws_session_token
-    )
-    kwargs.pop("hashing_kv", None)
-
-    messages = []
-    for history_message in history_messages:
-        message = copy.copy(history_message)
-        message["content"] = [{"text": message["content"]}]
-        messages.append(message)
-
-
-    messages.append({"role": "user", "content": [{"text": prompt}]})
-
-
-    args = {"modelId": model, "messages": messages}
-
-
-    if system_prompt:
-        args["system"] = [{"text": system_prompt}]
-
-
-    inference_params_map = {
-        "max_tokens": "maxTokens",
-        "top_p": "topP",
-        "stop_sequences": "stopSequences",
-    }
-    if inference_params := list(
-        set(kwargs) & set(["max_tokens", "temperature", "top_p", "stop_sequences"])
-    ):
-        args["inferenceConfig"] = {}
-        for param in inference_params:
-            args["inferenceConfig"][inference_params_map.get(param, param)] = (
-                kwargs.pop(param)
-            )
-
-
-    session = aioboto3.Session()
-    async with session.client("bedrock-runtime") as bedrock_async_client:
-        try:
-            response = await bedrock_async_client.converse(**args, **kwargs)
-        except Exception as e:
-            raise BedrockError(e)
-
-    return response["output"]["message"]["content"][0]["text"]
 
 
 @lru_cache(maxsize=1)
@@ -339,131 +265,6 @@ async def ollama_model_if_cache(
         return response["message"]["content"]
 
 
-@lru_cache(maxsize=1)
-def initialize_lmdeploy_pipeline(
-    model,
-    tp=1,
-    chat_template=None,
-    log_level="WARNING",
-    model_format="hf",
-    quant_policy=0,
-):
-    from lmdeploy import pipeline, ChatTemplateConfig, TurbomindEngineConfig
-
-    lmdeploy_pipe = pipeline(
-        model_path=model,
-        backend_config=TurbomindEngineConfig(
-            tp=tp, model_format=model_format, quant_policy=quant_policy
-        ),
-        chat_template_config=(
-            ChatTemplateConfig(model_name=chat_template) if chat_template else None
-        ),
-        log_level="WARNING",
-    )
-    return lmdeploy_pipe
-
-
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((RateLimitError, APIConnectionError, Timeout)),
-)
-async def lmdeploy_model_if_cache(
-    model,
-    prompt,
-    system_prompt=None,
-    history_messages=[],
-    chat_template=None,
-    model_format="hf",
-    quant_policy=0,
-    **kwargs,
-) -> str:
-    """
-    Args:
-        model (str): The path to the model.
-            It could be one of the following options:
-                    - i) A local directory path of a turbomind model which is
-                        converted by `lmdeploy convert` command or download
-                        from ii) and iii).
-                    - ii) The model_id of a lmdeploy-quantized model hosted
-                        inside a model repo on huggingface.co, such as
-                        "InternLM/internlm-chat-20b-4bit",
-                        "lmdeploy/llama2-chat-70b-4bit", etc.
-                    - iii) The model_id of a model hosted inside a model repo
-                        on huggingface.co, such as "internlm/internlm-chat-7b",
-                        "Qwen/Qwen-7B-Chat ", "baichuan-inc/Baichuan2-7B-Chat"
-                        and so on.
-        chat_template (str): needed when model is a pytorch model on
-            huggingface.co, such as "internlm-chat-7b",
-            "Qwen-7B-Chat ", "Baichuan2-7B-Chat" and so on,
-            and when the model name of local path did not match the original model name in HF.
-        tp (int): tensor parallel
-        prompt (Union[str, List[str]]): input texts to be completed.
-        do_preprocess (bool): whether pre-process the messages. Default to
-            True, which means chat_template will be applied.
-        skip_special_tokens (bool): Whether or not to remove special tokens
-            in the decoding. Default to be True.
-        do_sample (bool): Whether or not to use sampling, use greedy decoding otherwise.
-            Default to be False, which means greedy decoding will be applied.
-    """
-    try:
-        import lmdeploy
-        from lmdeploy import version_info, GenerationConfig
-    except Exception:
-        raise ImportError("Please install lmdeploy before initialize lmdeploy backend.")
-    kwargs.pop("hashing_kv", None)
-    kwargs.pop("response_format", None)
-    max_new_tokens = kwargs.pop("max_tokens", 512)
-    tp = kwargs.pop("tp", 1)
-    skip_special_tokens = kwargs.pop("skip_special_tokens", True)
-    do_preprocess = kwargs.pop("do_preprocess", True)
-    do_sample = kwargs.pop("do_sample", False)
-    gen_params = kwargs
-
-    version = version_info
-    if do_sample is not None and version < (0, 6, 0):
-        raise RuntimeError(
-            "`do_sample` parameter is not supported by lmdeploy until "
-            f"v0.6.0, but currently using lmdeloy {lmdeploy.__version__}"
-        )
-    else:
-        do_sample = True
-        gen_params.update(do_sample=do_sample)
-
-    lmdeploy_pipe = initialize_lmdeploy_pipeline(
-        model=model,
-        tp=tp,
-        chat_template=chat_template,
-        model_format=model_format,
-        quant_policy=quant_policy,
-        log_level="WARNING",
-    )
-
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-
-    messages.extend(history_messages)
-    messages.append({"role": "user", "content": prompt})
-
-    gen_config = GenerationConfig(
-        skip_special_tokens=skip_special_tokens,
-        max_new_tokens=max_new_tokens,
-        **gen_params,
-    )
-
-    response = ""
-    async for res in lmdeploy_pipe.generate(
-        messages,
-        gen_config=gen_config,
-        do_preprocess=do_preprocess,
-        stream_response=False,
-        session_id=1,
-    ):
-        response += res.response
-    return response
-
-
 class GPTKeywordExtractionFormat(BaseModel):
     high_level_keywords: List[str]
     low_level_keywords: List[str]
@@ -485,14 +286,14 @@ async def openai_complete(
     )
 
 
-async def gpt_4o_complete(
+async def siliconflow_complete(
     prompt, system_prompt=None, history_messages=[], keyword_extraction=False, **kwargs
 ) -> str:
     keyword_extraction = kwargs.pop("keyword_extraction", None)
     if keyword_extraction:
         kwargs["response_format"] = GPTKeywordExtractionFormat
     return await openai_complete_if_cache(
-        "gpt-4o",
+        "deepseek-ai/DeepSeek-V2.5",
         prompt,
         system_prompt=system_prompt,
         history_messages=history_messages,
@@ -515,45 +316,12 @@ async def gpt_4o_mini_complete(
     )
 
 
-async def nvidia_openai_complete(
-    prompt, system_prompt=None, history_messages=[], keyword_extraction=False, **kwargs
-) -> str:
-    keyword_extraction = kwargs.pop("keyword_extraction", None)
-    result = await openai_complete_if_cache(
-        "nvidia/llama-3.1-nemotron-70b-instruct",  
-        prompt,
-        system_prompt=system_prompt,
-        history_messages=history_messages,
-        base_url="https://integrate.api.nvidia.com/v1",
-        **kwargs,
-    )
-    if keyword_extraction:  # TODO: use JSON API
-        return locate_json_string_body_from_string(result)
-    return result
-
-
 async def azure_openai_complete(
     prompt, system_prompt=None, history_messages=[], keyword_extraction=False, **kwargs
 ) -> str:
     keyword_extraction = kwargs.pop("keyword_extraction", None)
     result = await azure_openai_complete_if_cache(
         "conversation-4o-mini",
-        prompt,
-        system_prompt=system_prompt,
-        history_messages=history_messages,
-        **kwargs,
-    )
-    if keyword_extraction:  # TODO: use JSON API
-        return locate_json_string_body_from_string(result)
-    return result
-
-
-async def bedrock_complete(
-    prompt, system_prompt=None, history_messages=[], keyword_extraction=False, **kwargs
-) -> str:
-    keyword_extraction = kwargs.pop("keyword_extraction", None)
-    result = await bedrock_complete_if_cache(
-        "anthropic.claude-3-haiku-20240307-v1:0",
         prompt,
         system_prompt=system_prompt,
         history_messages=history_messages,
@@ -588,174 +356,17 @@ async def ollama_model_complete(
     if keyword_extraction:
         kwargs["format"] = "json"
     model_name = kwargs["hashing_kv"].global_config["llm_model_name"]
+    model_name = "qwen3:32b"
     return await ollama_model_if_cache(
         model_name,
-        prompt,
+        prompt + " /no_think",
         system_prompt=system_prompt,
         history_messages=history_messages,
         **kwargs,
     )
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((RateLimitError, APIConnectionError, Timeout)),
-)
-async def zhipu_complete_if_cache(
-    prompt: Union[str, List[Dict[str, str]]],
-    model: str = "glm-4-flashx",  
-    api_key: Optional[str] = None,
-    system_prompt: Optional[str] = None,
-    history_messages: List[Dict[str, str]] = [],
-    **kwargs,
-) -> str:
-
-    try:
-        from zhipuai import ZhipuAI
-    except ImportError:
-        raise ImportError("Please install zhipuai before initialize zhipuai backend.")
-
-    if api_key:
-        client = ZhipuAI(api_key=api_key)
-    else:
-        client = ZhipuAI()
-
-    messages = []
-
-    if not system_prompt:
-        system_prompt = "You are a helpful assistant. 注意内容里的敏感词用***替换。"
-
-
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.extend(history_messages)
-    messages.append({"role": "user", "content": prompt})
-
-
-    logger.debug("===== Query Input to LLM =====")
-    logger.debug(f"Query: {prompt}")
-    logger.debug(f"System prompt: {system_prompt}")
-
-
-    kwargs = {
-        k: v for k, v in kwargs.items() if k not in ["hashing_kv", "keyword_extraction"]
-    }
-
-    response = client.chat.completions.create(model=model, messages=messages, **kwargs)
-
-    return response.choices[0].message.content
-
-
-async def zhipu_complete(
-    prompt, system_prompt=None, history_messages=[], keyword_extraction=False, **kwargs
-):
-
-    keyword_extraction = kwargs.pop("keyword_extraction", None)
-
-    if keyword_extraction:
-        extraction_prompt = """You are a helpful assistant that extracts keywords from text.
-        Please analyze the content and extract two types of keywords:
-        1. High-level keywords: Important concepts and main themes
-        2. Low-level keywords: Specific details and supporting elements
-
-        Return your response in this exact JSON format:
-        {
-            "high_level_keywords": ["keyword1", "keyword2"],
-            "low_level_keywords": ["keyword1", "keyword2", "keyword3"]
-        }
-
-        Only return the JSON, no other text."""
-
-
-        if system_prompt:
-            system_prompt = f"{system_prompt}\n\n{extraction_prompt}"
-        else:
-            system_prompt = extraction_prompt
-
-        try:
-            response = await zhipu_complete_if_cache(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                history_messages=history_messages,
-                **kwargs,
-            )
-
-
-            try:
-                data = json.loads(response)
-                return GPTKeywordExtractionFormat(
-                    high_level_keywords=data.get("high_level_keywords", []),
-                    low_level_keywords=data.get("low_level_keywords", []),
-                )
-            except json.JSONDecodeError:
-
-                match = re.search(r"\{[\s\S]*\}", response)
-                if match:
-                    try:
-                        data = json.loads(match.group())
-                        return GPTKeywordExtractionFormat(
-                            high_level_keywords=data.get("high_level_keywords", []),
-                            low_level_keywords=data.get("low_level_keywords", []),
-                        )
-                    except json.JSONDecodeError:
-                        pass
-
-
-                logger.warning(
-                    f"Failed to parse keyword extraction response: {response}"
-                )
-                return GPTKeywordExtractionFormat(
-                    high_level_keywords=[], low_level_keywords=[]
-                )
-        except Exception as e:
-            logger.error(f"Error during keyword extraction: {str(e)}")
-            return GPTKeywordExtractionFormat(
-                high_level_keywords=[], low_level_keywords=[]
-            )
-    else:
-        return await zhipu_complete_if_cache(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            history_messages=history_messages,
-            **kwargs,
-        )
-
-
-@wrap_embedding_func_with_attrs(embedding_dim=1024, max_token_size=8192)
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=60),
-    retry=retry_if_exception_type((RateLimitError, APIConnectionError, Timeout)),
-)
-async def zhipu_embedding(
-    texts: list[str], model: str = "embedding-3", api_key: str = None, **kwargs
-) -> np.ndarray:
-
-    try:
-        from zhipuai import ZhipuAI
-    except ImportError:
-        raise ImportError("Please install zhipuai before initialize zhipuai backend.")
-    if api_key:
-        client = ZhipuAI(api_key=api_key)
-    else:
-        client = ZhipuAI()
-
-    if isinstance(texts, str):
-        texts = [texts]
-
-    embeddings = []
-    for text in texts:
-        try:
-            response = client.embeddings.create(model=model, input=[text], **kwargs)
-            embeddings.append(response.data[0].embedding)
-        except Exception as e:
-            raise Exception(f"Error calling ChatGLM Embedding API: {str(e)}")
-
-    return np.array(embeddings)
-
-
-@wrap_embedding_func_with_attrs(embedding_dim=1536, max_token_size=8192)
+@wrap_embedding_func_with_attrs(embedding_dim=2560, max_token_size=8192)
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=4, max=60),
@@ -763,20 +374,33 @@ async def zhipu_embedding(
 )
 async def openai_embedding(
     texts: list[str],
-    model: str = "text-embedding-3-small",
-    base_url="https://api.openai.com/v1",
+    model: str = "Qwen/Qwen3-Embedding-4B",
+    base_url="",
     api_key="",
 ) -> np.ndarray:
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
+    if base_url:
+        os.environ["OPENAI_BASE_URL"] = base_url
+    # Allow api_key parameter to override environment variable
+    token = api_key or os.getenv("OPENAI_API_KEY", "")
 
-    openai_async_client = (
-        AsyncOpenAI() if base_url is None else AsyncOpenAI(base_url=base_url)
-    )
-    response = await openai_async_client.embeddings.create(
-        model=model, input=texts, encoding_format="float"
-    )
-    return np.array([dp.embedding for dp in response.data])
+    url = f'{os.environ["OPENAI_BASE_URL"]}/embeddings'
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    data = {
+        "model": model,
+        "input": texts,
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=data, headers=headers) as response:
+            response_json = await response.json()
+
+    data_list = response_json.get("data", [])
+    return np.array([dp["embedding"] for dp in data_list])
 
 
 async def fetch_data(url, headers, data):
@@ -813,7 +437,7 @@ async def jina_embedding(
     return np.array([dp["embedding"] for dp in data_list])
 
 
-@wrap_embedding_func_with_attrs(embedding_dim=2048, max_token_size=512)
+@wrap_embedding_func_with_attrs(embedding_dim=2560, max_token_size=512)
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=4, max=60),
@@ -824,16 +448,14 @@ async def nvidia_openai_embedding(
     model: str = "nvidia/llama-3.2-nv-embedqa-1b-v1",
     base_url: str = "https://integrate.api.nvidia.com/v1",
     api_key: str = None,
-    input_type: str = "passage",  
-    trunc: str = "NONE",  
-    encode: str = "float",  
+    input_type: str = "passage",
+    trunc: str = "NONE",
+    encode: str = "float",
 ) -> np.ndarray:
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
 
-    openai_async_client = (
-        AsyncOpenAI() if base_url is None else AsyncOpenAI(base_url=base_url)
-    )
+    openai_async_client = AsyncOpenAI(base_url=base_url) if base_url else AsyncOpenAI()
     response = await openai_async_client.embeddings.create(
         model=model,
         input=texts,
@@ -843,7 +465,7 @@ async def nvidia_openai_embedding(
     return np.array([dp.embedding for dp in response.data])
 
 
-@wrap_embedding_func_with_attrs(embedding_dim=1536, max_token_size=8191)
+@wrap_embedding_func_with_attrs(embedding_dim=2560, max_token_size=8191)
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=4, max=10),
@@ -882,9 +504,9 @@ async def azure_openai_embedding(
 )
 async def siliconcloud_embedding(
     texts: list[str],
-    model: str = "netease-youdao/bce-embedding-base_v1",
+    model: str = "Qwen/Qwen3-Embedding-4B",
     base_url: str = "https://api.siliconflow.cn/v1/embeddings",
-    max_token_size: int = 512,
+    max_token_size: int = 8192,
     api_key: str = None,
 ) -> np.ndarray:
     if api_key and not api_key.startswith("Bearer "):
@@ -911,73 +533,6 @@ async def siliconcloud_embedding(
         float_array = struct.unpack("<" + "f" * n, decode_bytes)
         embeddings.append(float_array)
     return np.array(embeddings)
-
-
-
-async def bedrock_embedding(
-    texts: list[str],
-    model: str = "amazon.titan-embed-text-v2:0",
-    aws_access_key_id=None,
-    aws_secret_access_key=None,
-    aws_session_token=None,
-) -> np.ndarray:
-    os.environ["AWS_ACCESS_KEY_ID"] = os.environ.get(
-        "AWS_ACCESS_KEY_ID", aws_access_key_id
-    )
-    os.environ["AWS_SECRET_ACCESS_KEY"] = os.environ.get(
-        "AWS_SECRET_ACCESS_KEY", aws_secret_access_key
-    )
-    os.environ["AWS_SESSION_TOKEN"] = os.environ.get(
-        "AWS_SESSION_TOKEN", aws_session_token
-    )
-
-    session = aioboto3.Session()
-    async with session.client("bedrock-runtime") as bedrock_async_client:
-        if (model_provider := model.split(".")[0]) == "amazon":
-            embed_texts = []
-            for text in texts:
-                if "v2" in model:
-                    body = json.dumps(
-                        {
-                            "inputText": text,
-                            
-                            "embeddingTypes": ["float"],
-                        }
-                    )
-                elif "v1" in model:
-                    body = json.dumps({"inputText": text})
-                else:
-                    raise ValueError(f"Model {model} is not supported!")
-
-                response = await bedrock_async_client.invoke_model(
-                    modelId=model,
-                    body=body,
-                    accept="application/json",
-                    contentType="application/json",
-                )
-
-                response_body = await response.get("body").json()
-
-                embed_texts.append(response_body["embedding"])
-        elif model_provider == "cohere":
-            body = json.dumps(
-                {"texts": texts, "input_type": "search_document", "truncate": "NONE"}
-            )
-
-            response = await bedrock_async_client.invoke_model(
-                model=model,
-                body=body,
-                accept="application/json",
-                contentType="application/json",
-            )
-
-            response_body = json.loads(response.get("body").read())
-
-            embed_texts = response_body["embeddings"]
-        else:
-            raise ValueError(f"Model provider '{model_provider}' is not supported!")
-
-        return np.array(embed_texts)
 
 
 async def hf_embedding(texts: list[str], tokenizer, embed_model) -> np.ndarray:
@@ -1079,7 +634,7 @@ class MultiModel:
     async def llm_model_func(
         self, prompt, system_prompt=None, history_messages=[], **kwargs
     ) -> str:
-        kwargs.pop("model", None)   
+        kwargs.pop("model", None)
         kwargs.pop("keyword_extraction", None)
         kwargs.pop("mode", None)
         next_model = self._next_model()
