@@ -143,7 +143,7 @@ def write_json(json_obj, file_name):
         json.dump(json_obj, f, indent=2, ensure_ascii=False)
 
 
-def encode_string_by_tiktoken(content: str, model_name: str = "deepseek-ai/DeepSeek-V3"):
+def encode_string_by_tiktoken(content: str, model_name: str = "gpt-4o-mini"):
     global ENCODER
     if ENCODER is None:
         ENCODER = tiktoken.encoding_for_model(model_name)
@@ -151,7 +151,7 @@ def encode_string_by_tiktoken(content: str, model_name: str = "deepseek-ai/DeepS
     return tokens
 
 
-def decode_tokens_by_tiktoken(tokens: list[int], model_name: str = "deepseek-ai/DeepSeek-V3"):
+def decode_tokens_by_tiktoken(tokens: list[int], model_name: str = "gpt-4o-mini"):
     global ENCODER
     if ENCODER is None:
         ENCODER = tiktoken.encoding_for_model(model_name)

@@ -87,7 +87,7 @@ class PathRAG:
 
     chunk_token_size: int = 1200
     chunk_overlap_token_size: int = 100
-    tiktoken_model_name: str = "deepseek-ai/DeepSeek-V3"
+    tiktoken_model_name: str = "gpt-4o-mini"
 
     entity_extract_max_gleaning: int = 1
     entity_summary_to_max_tokens: int = 500
@@ -111,7 +111,7 @@ class PathRAG:
     embedding_func_max_async: int = 16
 
     llm_model_func: callable = siliconflow_complete
-    llm_model_name: str = "deepseek-ai/DeepSeek-V3"
+    llm_model_name: str = "gpt-4o-mini"
     llm_model_max_token_size: int = 32768
     llm_model_max_async: int = 16
     llm_model_kwargs: dict = field(default_factory=dict)
