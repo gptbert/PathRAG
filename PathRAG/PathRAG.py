@@ -87,7 +87,7 @@ class PathRAG:
 
     chunk_token_size: int = 1200
     chunk_overlap_token_size: int = 100
-    tiktoken_model_name: str = "gpt-4o-mini"
+    tiktoken_model_name: str = "deepseek-ai/DeepSeek-V3"
 
     entity_extract_max_gleaning: int = 1
     entity_summary_to_max_tokens: int = 500

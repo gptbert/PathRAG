@@ -6,10 +6,8 @@ from PathRAG.llm import siliconflow_complete
 
 WORKING_DIR = "kg"
 
-api_key = ""
-os.environ["SILICONFLOW_API_KEY"] = api_key
-base_url = "https://api.siliconflow.cn/v1"
-os.environ["SILICONFLOW_BASE_URL"] = base_url
+os.environ["OPENAI_API_KEY"] = os.getenv("SILICONFLOW_API_KEY", "")
+os.environ["OPENAI_BASE_URL"] = os.getenv("SILICONFLOW_BASE_URL", "")
 
 
 if not os.path.exists(WORKING_DIR):

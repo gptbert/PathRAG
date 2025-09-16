@@ -61,7 +61,7 @@ async def siliconflow_complete(
     history_messages: Optional[List[Dict[str, str]]] = None,
     keyword_extraction: bool = False,
     *,
-    model: str = "deepseek-ai/DeepSeek-V2.5",
+    model: str = "deepseek-ai/DeepSeek-V3",
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
     **kwargs: Any,
