@@ -40,9 +40,7 @@ def _build_messages(
 
 def _get_async_client(base_url: Optional[str], api_key: Optional[str]) -> AsyncOpenAI:
     client_kwargs: Dict[str, Any] = {}
-    env_base_url = (
-        base_url or os.getenv("SILICONFLOW_BASE_URL")
-    )
+    env_base_url = base_url or os.getenv("SILICONFLOW_BASE_URL")
     if env_base_url:
         client_kwargs["base_url"] = env_base_url
     if api_key or os.getenv("SILICONFLOW_API_KEY"):
@@ -61,7 +59,7 @@ async def siliconflow_complete(
     history_messages: Optional[List[Dict[str, str]]] = None,
     keyword_extraction: bool = False,
     *,
-    model: str = "deepseek-ai/DeepSeek-V3",
+    model: str = "ByteDance-Seed/Seed-OSS-36B-Instruct",
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
     **kwargs: Any,
@@ -72,38 +70,48 @@ async def siliconflow_complete(
     kwargs.pop("hashing_kv", None)
     kwargs.pop("mode", None)
     kwargs.pop("keyword_extraction", None)
-    if keyword_extraction:
-        kwargs["response_format"] = GPTKeywordExtractionFormat
 
     messages = _build_messages(prompt, system_prompt, history_messages)
     client = _get_async_client(base_url, api_key)
 
-    response = await client.chat.completions.create(
-        model=model,
-        messages=messages,
-        **kwargs,
-    )
+    if keyword_extraction:
+        # 使用 parse() 处理 Pydantic 模型
+        response = await client.chat.completions.parse(
+            model=model,
+            messages=messages,
+            response_format=GPTKeywordExtractionFormat,
+            **kwargs,
+        )
+        # 将 Pydantic 对象转成 JSON 字符串，保持接口一致
+        return response.model_dump_json(indent=2)
+    else:
+        # 原有逻辑：使用 create() 返回字符串
+        response = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            **kwargs,
+        )
 
-    if hasattr(response, "__aiter__"):
+        if hasattr(response, "__aiter__"):
 
-        async def inner():
-            async for chunk in response:
-                content = chunk.choices[0].delta.content
-                if not content:
-                    continue
-                if r"\u" in content:
-                    content = safe_unicode_decode(content.encode("utf-8"))
-                yield content
+            async def inner():
+                async for chunk in response:
+                    content = chunk.choices[0].delta.content
+                    if not content:
+                        continue
+                    if r"\u" in content:
+                        content = safe_unicode_decode(content.encode("utf-8"))
+                    yield content
 
-        return inner()
+            return inner()
 
-    content = response.choices[0].message.content
-    if content and r"\u" in content:
-        content = safe_unicode_decode(content.encode("utf-8"))
+        content = response.choices[0].message.content
+        if content and r"\u" in content:
+            content = safe_unicode_decode(content.encode("utf-8"))
 
-    logger.debug("===== SiliconFlow LLM Response =====")
-    logger.debug(content)
-    return content or ""
+        logger.debug("===== SiliconFlow LLM Response =====")
+        logger.debug(content)
+        return content or ""
 
 
 def _deterministic_embedding(text: str, dim: int) -> np.ndarray:
@@ -139,12 +147,11 @@ async def siliconcloud_embedding(
         logger.warning(
             "SiliconFlow embedding API unavailable; falling back to deterministic embeddings."
         )
-        return np.stack([_deterministic_embedding(text, dim) for text in truncate_texts])
+        return np.stack(
+            [_deterministic_embedding(text, dim) for text in truncate_texts]
+        )
 
-    token = (
-        api_key
-        or os.getenv("SILICONFLOW_API_KEY")
-    )
+    token = api_key or os.getenv("SILICONFLOW_API_KEY")
 
     if not token:
         return local_embeddings()
@@ -157,9 +164,13 @@ async def siliconcloud_embedding(
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(base_url, headers=headers, json=payload) as response:
+            async with session.post(
+                base_url, headers=headers, json=payload
+            ) as response:
                 if response.status != 200:
-                    raise RuntimeError(f"HTTP {response.status}: {await response.text()}")
+                    raise RuntimeError(
+                        f"HTTP {response.status}: {await response.text()}"
+                    )
                 content = await response.json()
     except Exception as exc:
         logger.warning(f"SiliconFlow embedding request failed: {exc}")

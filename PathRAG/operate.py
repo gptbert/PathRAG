@@ -496,24 +496,15 @@ async def kg_query(
     logger.info("kw_prompt result:")
     print(result)
     try:
-
-        match = re.search(r"\{.*\}", result, re.DOTALL)
-        if match:
-            result = match.group(0)
-            keywords_data = json.loads(result)
-
-            hl_keywords = keywords_data.get("high_level_keywords", [])
-            ll_keywords = keywords_data.get("low_level_keywords", [])
-        else:
-            logger.error("No JSON-like structure found in the result.")
-            return PROMPTS["fail_response"]
-
+        keywords_data = json.loads(result)["choices"][0]["message"]["parsed"]
+        hl_keywords = keywords_data.get("high_level_keywords", [])
+        ll_keywords = keywords_data.get("low_level_keywords", [])
     except json.JSONDecodeError as e:
         print(f"JSON parsing error: {e} {result}")
         return PROMPTS["fail_response"]
 
     if hl_keywords == [] and ll_keywords == []:
-        logger.warning("low_level_keywords and high_level_keywords is empty")
+        logger.warning(" and high_level_keywords is empty")
         return PROMPTS["fail_response"]
     if ll_keywords == [] and query_param.mode in ["hybrid"]:
         logger.warning("low_level_keywords is empty")
